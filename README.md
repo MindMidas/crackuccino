@@ -31,10 +31,6 @@
 </p>
 
 <p align="center">
-  <img src="src/frontend/public/assets/github-banner.png" alt="Crackuccino preview" width="100%">
-</p>
-
-<p align="center">
   <img src="src/frontend/public/assets/crackuccino.gif" alt="Crackuccino demo" width="100%">
 </p>
 
