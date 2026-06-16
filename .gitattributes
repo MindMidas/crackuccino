@@ -1,0 +1,5 @@
+# GitHub Linguist: count native C as the primary language.
+src/frontend/** linguist-vendored
+src/server/** linguist-vendored
+src/data/** linguist-vendored
+tests/** linguist-vendored

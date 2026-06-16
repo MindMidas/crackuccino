@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+FRONTEND="${ROOT}/src/frontend"
+LOG_DIR="${ROOT}/.dev-logs"
+PID_FILE="${LOG_DIR}/server.pid"
+PORT="${CRACKUCCINO_PORT:-8010}"
+
+die() { echo "error: $*" >&2; exit 1; }
+usage() {
+  cat <<EOF
+Usage: ./build [build|all|run|start|restart|stop|clean|test|typecheck|lint|audit|help]
+No command builds everything and starts the server. CRACKUCCINO_PORT defaults to 8010.
+EOF
+}
+install_frontend() { [[ -d "${FRONTEND}/node_modules" ]] || (cd "${FRONTEND}" && npm ci --no-audit --no-fund); }
+build_all() { make -C "${ROOT}"; install_frontend; (cd "${FRONTEND}" && npm run build); }
+stop_server() {
+  if [[ -f "${PID_FILE}" ]]; then kill "$(cat "${PID_FILE}")" 2>/dev/null || true; rm -f "${PID_FILE}"; fi
+  if command -v lsof >/dev/null 2>&1; then lsof -ti ":${PORT}" 2>/dev/null | xargs kill 2>/dev/null || true; fi
+}
+run_server() {
+  mkdir -p "${LOG_DIR}"
+  echo "==> Starting Crackuccino on http://127.0.0.1:${PORT}"
+  echo "Open MPI may require running this command from a normal terminal."
+  nohup python3 -m src.server.app --host 127.0.0.1 --port "${PORT}" >"${LOG_DIR}/server.log" 2>&1 </dev/null &
+  echo $! > "${PID_FILE}"
+}
+test_all() {
+  python3 -m compileall -q "${ROOT}/src" "${ROOT}/tests/python"
+  make -C "${ROOT}"
+  "${ROOT}/encrypt" "this is a test" >/dev/null
+  "${ROOT}/decrypt-serial" "${ROOT}/ciphertext.txt" "${ROOT}/src/data/dictionaries/small_dictionary" >/dev/null
+  if [[ "${CRACKUCCINO_FULL_TESTS:-0}" == "1" ]]; then python3 "${ROOT}/run_all.py"; fi
+}
+typecheck() { install_frontend; (cd "${FRONTEND}" && npm run typecheck); }
+lint() { install_frontend; (cd "${FRONTEND}" && npm run lint); }
+audit() { typecheck; lint; test_all; (cd "${FRONTEND}" && npm audit --audit-level=high); }
+clean_all() {
+  stop_server
+  make -C "${ROOT}" clean
+  rm -rf "${FRONTEND}/dist" "${LOG_DIR}"
+  rm -f "${FRONTEND}"/*.tsbuildinfo
+  find "${ROOT}/src" "${ROOT}/tests" -type d -name __pycache__ -prune -exec rm -rf {} +
+  find "${ROOT}/src" "${ROOT}/tests" -type f -name '*.pyc' -delete
+}
+
+case "${1:-all}" in
+  build) build_all ;;
+  all) build_all; stop_server; run_server ;;
+  run|start) stop_server; run_server ;;
+  restart) stop_server; build_all; run_server ;;
+  stop) stop_server ;;
+  clean) clean_all ;;
+  test) test_all ;;
+  typecheck) typecheck ;;
+  lint) lint ;;
+  audit) audit ;;
+  help|-h|--help) usage ;;
+  *) die "Unknown command: $1" ;;
+esac

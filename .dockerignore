@@ -1,0 +1,9 @@
+.dev-logs
+.pytest_cache
+__pycache__
+*.pyc
+src/frontend/node_modules
+src/frontend/dist
+src/frontend/*.tsbuildinfo
+src/frontend/public/assets/*.mov
+.DS_Store
