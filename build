@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+SMOKE_DICT="${ROOT}/tests/inputs/smoke_dictionary.txt"
+SMOKE_MPI_OUT="${ROOT}/tests/results/mpi_smoke.txt"
+SMOKE_KEY="wbermcof"
+
+die() { echo "error: $*" >&2; exit 1; }
+
+usage() {
+  cat <<EOF
+Usage: ./build [build|clean|test|full-test|help]
+
+Commands:
+  build      compile encrypt, decrypt-serial, decrypt-mpi, and decrypt-key
+  clean      remove generated binaries, ciphertext, test outputs, and caches
+  test       run terminal smoke tests
+  full-test  run python3 run_all.py after compiling
+  help       show this help
+EOF
+}
+
+build_all() {
+  make -C "${ROOT}"
+}
+
+prepare_smoke_dictionary() {
+  mkdir -p "$(dirname "${SMOKE_DICT}")"
+  mkdir -p "$(dirname "${SMOKE_MPI_OUT}")"
+  printf "brew\nme\ncoffee\n" > "${SMOKE_DICT}"
+}
+
+clean_all() {
+  make -C "${ROOT}" clean
+  find "${ROOT}/tests/inputs" -type f ! -name '.gitkeep' -delete
+  find "${ROOT}/tests/results" -type f ! -name '.gitkeep' -delete
+  rm -rf "${ROOT}/__pycache__"
+  find "${ROOT}/tests" -type d -name __pycache__ -prune -exec rm -rf {} +
+  find "${ROOT}/tests" -type f -name '*.pyc' -delete
+  rm -f "${ROOT}"/valgrind.*.log
+}
+
+smoke_test() {
+  build_all
+  prepare_smoke_dictionary
+  python3 -m py_compile "${ROOT}/run_all.py" "${ROOT}"/tests/python/*.py
+  "${ROOT}/encrypt" "brew me coffee" --key "${SMOKE_KEY}"
+  "${ROOT}/decrypt-key" "${ROOT}/ciphertext.txt" --input-dict brewmcof --encrypt-dict "${SMOKE_KEY}"
+  "${ROOT}/decrypt-serial" "${ROOT}/ciphertext.txt" "${SMOKE_DICT}" --stats
+
+  if command -v mpirun >/dev/null 2>&1; then
+    CRACKUCCINO_PROGRESS_PLAIN=1 mpirun -np 2 "${ROOT}/decrypt-mpi" "${ROOT}/ciphertext.txt" "${SMOKE_DICT}" --stats --progress > "${SMOKE_MPI_OUT}"
+    grep -q "found: brew me coffee" "${SMOKE_MPI_OUT}"
+    tail -n 12 "${SMOKE_MPI_OUT}"
+  else
+    echo "warning: mpirun not found; skipping MPI smoke test"
+  fi
+}
+
+full_test() {
+  build_all
+  python3 "${ROOT}/run_all.py"
+}
+
+case "${1:-build}" in
+  build) build_all ;;
+  clean) clean_all ;;
+  test) smoke_test ;;
+  full-test) full_test ;;
+  help|-h|--help) usage ;;
+  *) die "Unknown command: $1" ;;
+esac
